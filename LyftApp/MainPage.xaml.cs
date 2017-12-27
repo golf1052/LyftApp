@@ -20,6 +20,7 @@ using Windows.Services.Maps;
 using System.Diagnostics;
 using Google.Maps.Places;
 using Google.Maps.Places.Details;
+using Shyft;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -30,20 +31,33 @@ namespace LyftApp
     /// </summary>
     public sealed partial class MainPage : Page
     {
+        public enum RideStates
+        {
+            Pickup,
+            Dropoff,
+            Ride
+        }
+
+        private RideStates rideState;
         private Geolocator geolocator;
-        private List<MapElement> driverLayer;
+        private List<MapElement> driverList;
+        private MapIcon userLocation;
         private MapIcon startLocation;
         private DateTime? addressLastChecked;
         private PlacesService placesService;
         private PlaceDetailsService placeDetailsService;
         private Dictionary<string, string> addressToId;
         private bool reverseGeocode;
+        private BasicGeoposition lastCenter;
+        private bool loaded;
 
         public MainPage()
         {
             this.InitializeComponent();
 
-            driverLayer = new List<MapElement>();
+            rideState = RideStates.Pickup;
+
+            driverList = new List<MapElement>();
 
             map.MapServiceToken = Secrets.MapToken;
             map.BusinessLandmarksVisible = true;
@@ -56,10 +70,24 @@ namespace LyftApp
             geolocator.AllowFallbackToConsentlessPositions();
             geolocator.ReportInterval = (uint)TimeSpan.FromSeconds(15).TotalSeconds;
 
+            geolocator.PositionChanged += Geolocator_PositionChanged;
+
             placesService = new PlacesService();
             placeDetailsService = new PlaceDetailsService();
             addressToId = new Dictionary<string, string>();
             reverseGeocode = true;
+            loaded = false;
+        }
+
+        private async void Geolocator_PositionChanged(Geolocator sender, PositionChangedEventArgs args)
+        {
+            if (userLocation != null)
+            {
+                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
+                {
+                    userLocation.Location = args.Position.Coordinate.Point;
+                });
+            }
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -71,56 +99,113 @@ namespace LyftApp
             //    throw new Exception();
             //}
 
-            Geolocator geolocator = new Geolocator();
-            geolocator.AllowFallbackToConsentlessPositions();
-            geolocator.ReportInterval = (uint)TimeSpan.FromSeconds(15).TotalSeconds;
             Geoposition position = await geolocator.GetGeopositionAsync();
             map.Center = position.Coordinate.Point;
             map.ZoomLevel = 15;
             List<MapElement> layer = new List<MapElement>();
-            MapIcon location = new MapIcon();
-            location.Location = position.Coordinate.Point;
-            location.NormalizedAnchorPoint = new Point(0.5, 1.0);
-            location.CollisionBehaviorDesired = MapElementCollisionBehavior.RemainVisible;
-            location.Title = "Your location";
-            layer.Add(location);
-            MapElementsLayer mapElementsLayer = new MapElementsLayer();
-            mapElementsLayer.MapElements = layer;
-            map.Layers.Add(mapElementsLayer);
+            userLocation = new MapIcon();
+            userLocation.Location = position.Coordinate.Point;
+            userLocation.NormalizedAnchorPoint = new Point(0.5, 1.0);
+            userLocation.CollisionBehaviorDesired = MapElementCollisionBehavior.RemainVisible;
+            userLocation.Title = "Your location";
+            map.MapElements.Add(userLocation);
 
             startLocation = new MapIcon();
             startLocation.Location = position.Coordinate.Point;
             startLocation.CollisionBehaviorDesired = MapElementCollisionBehavior.RemainVisible;
             startLocation.Title = "Pickup location";
-            map.Layers.Add(new MapElementsLayer()
-            {
-                MapElements = new List<MapElement>()
-                {
-                    startLocation
-                }
-            });
+            map.MapElements.Add(startLocation);
 
-            await DisplayDrivers();
+            UpdateFromMapCenterTimer();
+            await DisplayDrivers(map.Center.Position, RideTypeEnum.RideTypes.Lyft);
+            await GetEta(map.Center.Position, RideTypeEnum.RideTypes.Lyft);
+            loaded = true;
         }
 
-        private async Task DisplayDrivers()
+        private async Task UpdateFromMapCenterTimer()
         {
-            Geoposition position = await geolocator.GetGeopositionAsync();
-            Geopoint point = position.Coordinate.Point;
-            var nearbyDrivers = await AppConstants.ShyftClient.RetrieveNearbyDrivers(point.Position.Latitude, point.Position.Longitude);
-            driverLayer.Clear();
+            while (true)
+            {
+                if (rideState == RideStates.Pickup)
+                {
+                    if (!map.Center.Position.EqualsOther(lastCenter))
+                    {
+                        await ReverseGeocode(new Geopoint(map.Center.Position));
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(1));
+            }
+        }
+
+        private async Task DisplayDrivers(BasicGeoposition geoposition, RideTypeEnum.RideTypes rideType)
+        {
+            var nearbyDrivers = await AppConstants.ShyftClient.RetrieveNearbyDrivers(geoposition.Latitude, geoposition.Longitude);
+            foreach (var driver in driverList)
+            {
+                map.MapElements.Remove(driver);
+            }
+            driverList.Clear();
             foreach (var nearbyDriver in nearbyDrivers)
             {
-                foreach (var driver in nearbyDriver.Drivers)
+                if (nearbyDriver.RideType == rideType)
                 {
-                    driverLayer.Add(CreatePin(driver.Locations.Last()));
+                    foreach (var driver in nearbyDriver.Drivers)
+                    {
+                        driverList.Add(CreatePin(driver.Locations.Last()));
+                    }
+                    break;
                 }
             }
 
-            map.Layers.Add(new MapElementsLayer()
+            foreach (var driver in driverList)
             {
-                MapElements = driverLayer
-            });
+                map.MapElements.Add(driver);
+            }
+        }
+
+        private async Task GetEta(BasicGeoposition geoposition, RideTypeEnum.RideTypes rideType)
+        {
+            int? etaSeconds = null;
+            int? etaSecondsMax = null;
+            var etas = await AppConstants.ShyftClient.RetrieveDriverEta(geoposition.Latitude, geoposition.Longitude, null, null, rideType);
+            foreach (var eta in etas)
+            {
+                if (eta.RideType == rideType && eta.IsValidEstimate && eta.EtaSeconds != null)
+                {
+                    etaSeconds = eta.EtaSeconds;
+                    etaSecondsMax = eta.EtaSecondsMax;
+                    break;
+                }
+            }
+
+            if (!etaSeconds.HasValue)
+            {
+                etaTextBlock.Text = "No ETA";
+            }
+            else
+            {
+                if (etaSeconds.Value < 60)
+                {
+                    etaTextBlock.Text = $"{etaSeconds.Value} sec";
+                }
+                else
+                {
+                    etaTextBlock.Text = $"{Math.Round(TimeSpan.FromSeconds(etaSeconds.Value).TotalMinutes)} min";
+                }
+
+                if (etaSecondsMax.HasValue)
+                {
+                    if (etaSecondsMax.Value < 60)
+                    {
+                        etaTextBlock.Text += $" - {etaSecondsMax.Value} sec";
+                    }
+                    else
+                    {
+                        etaTextBlock.Text += $" - {Math.Round(TimeSpan.FromSeconds(etaSecondsMax.Value).TotalMinutes)} min";
+                    }
+                }
+            }
         }
 
         private MapIcon CreatePin(LatLng latLng)
@@ -147,17 +232,23 @@ namespace LyftApp
                     addressLastChecked = DateTime.Now;
                     if (reverseGeocode)
                     {
-                        MapLocationFinderResult result = await MapLocationFinder.FindLocationsAtAsync(map.Center);
-                        if (result.Status == MapLocationFinderStatus.Success && result.Locations.Count > 0)
-                        {
-                            pickupSearchBox.Text = result.Locations[0].DisplayName;
-                        }
+                        await ReverseGeocode(new Geopoint(map.Center.Position));
                     }
                     else
                     {
                         reverseGeocode = true;
                     }
                 }
+            }
+        }
+
+        private async Task ReverseGeocode(Geopoint geopoint)
+        {
+            MapLocationFinderResult result = await MapLocationFinder.FindLocationsAtAsync(geopoint);
+            if (result.Status == MapLocationFinderStatus.Success && result.Locations.Count > 0)
+            {
+                pickupSearchBox.Text = result.Locations[0].DisplayName;
+                lastCenter = geopoint.Position;
             }
         }
 
@@ -205,6 +296,36 @@ namespace LyftApp
                         Latitude = placeDetailsResponse.Result.Geometry.Location.Latitude,
                         Longitude = placeDetailsResponse.Result.Geometry.Location.Longitude
                     });
+                }
+            }
+        }
+
+        private async void rideTypeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (loaded)
+            {
+                RideTypeEnum.RideTypes? selectedRideType = null;
+                if (e.AddedItems.Count > 0)
+                {
+                    string selected = (string)((ComboBoxItem)e.AddedItems[0]).Content;
+                    if (selected == "Line")
+                    {
+                        selectedRideType = RideTypeEnum.RideTypes.LyftLine;
+                    }
+                    else if (selected == "Lyft")
+                    {
+                        selectedRideType = RideTypeEnum.RideTypes.Lyft;
+                    }
+                    else if (selected == "Plus")
+                    {
+                        selectedRideType = RideTypeEnum.RideTypes.LyftPlus;
+                    }
+
+                    if (selectedRideType.HasValue)
+                    {
+                        await DisplayDrivers(map.Center.Position, selectedRideType.Value);
+                        await GetEta(map.Center.Position, selectedRideType.Value);
+                    }
                 }
             }
         }

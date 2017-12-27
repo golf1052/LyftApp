@@ -16,11 +16,12 @@
         <Custom:MapControl x:Name="map" CenterChanged="map_CenterChanged"/>
         <Grid Grid.Row="1">
             <StackPanel>
-                <ComboBox HorizontalAlignment="Stretch">
+                <ComboBox x:Name="rideTypeComboBox" HorizontalAlignment="Stretch" SelectedIndex="1" SelectionChanged="rideTypeComboBox_SelectionChanged">
                     <ComboBoxItem Content="Line"/>
                     <ComboBoxItem Content="Lyft"/>
                     <ComboBoxItem Content="Plus"/>
                 </ComboBox>
+                <TextBlock x:Name="etaTextBlock" TextAlignment="Center"/>
                 <AutoSuggestBox x:Name="pickupSearchBox" VerticalAlignment="Stretch" QueryIcon="Find" PlaceholderText="Pickup location" TextChanged="pickupSearchBox_TextChanged" SuggestionChosen="pickupSearchBox_SuggestionChosen" QuerySubmitted="pickupSearchBox_QuerySubmitted"/>
                 <Button Content="Set pickup" HorizontalAlignment="Stretch"/>
             </StackPanel>
