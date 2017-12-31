@@ -16,14 +16,14 @@
         <Custom:MapControl x:Name="map" CenterChanged="map_CenterChanged"/>
         <Grid Grid.Row="1">
             <StackPanel>
-                <ComboBox x:Name="rideTypeComboBox" HorizontalAlignment="Stretch" SelectedIndex="1" SelectionChanged="rideTypeComboBox_SelectionChanged">
-                    <ComboBoxItem Content="Line"/>
-                    <ComboBoxItem Content="Lyft"/>
-                    <ComboBoxItem Content="Plus"/>
+                <ComboBox x:Name="rideTypeComboBox" HorizontalAlignment="Stretch" SelectionChanged="rideTypeComboBox_SelectionChanged">
                 </ComboBox>
                 <TextBlock x:Name="etaTextBlock" TextAlignment="Center"/>
-                <AutoSuggestBox x:Name="pickupSearchBox" VerticalAlignment="Stretch" QueryIcon="Find" PlaceholderText="Pickup location" TextChanged="pickupSearchBox_TextChanged" SuggestionChosen="pickupSearchBox_SuggestionChosen" QuerySubmitted="pickupSearchBox_QuerySubmitted"/>
-                <Button Content="Set pickup" HorizontalAlignment="Stretch"/>
+                <TextBlock x:Name="costTextBlock" TextAlignment="Center" Visibility="Collapsed"/>
+                <AutoSuggestBox x:Name="pickupSearchBox" QueryIcon="Find" IsEnabled="False" Visibility="Collapsed"/>
+                <AutoSuggestBox x:Name="dropoffSearchBox" QueryIcon="Find" IsEnabled="False" Visibility="Collapsed"/>
+                <AutoSuggestBox x:Name="searchBox" VerticalAlignment="Stretch" QueryIcon="Find" TextChanged="searchBox_TextChanged" SuggestionChosen="searchBox_SuggestionChosen" QuerySubmitted="searchBox_QuerySubmitted"/>
+                <Button x:Name="button" Content="Set pickup" HorizontalAlignment="Stretch" Click="button_Click"/>
             </StackPanel>
         </Grid>
     </Grid>
