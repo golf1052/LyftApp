@@ -88,10 +88,10 @@ namespace LyftApp
 
             map.MapServiceToken = Secrets.MapToken;
             map.BusinessLandmarksVisible = true;
-            map.LandmarksVisible = true;
-            map.PedestrianFeaturesVisible = true;
-            map.TrafficFlowVisible = true;
-            map.TransitFeaturesVisible = true;
+            //map.LandmarksVisible = true;
+            //map.PedestrianFeaturesVisible = true;
+            //map.TrafficFlowVisible = true;
+            //map.TransitFeaturesVisible = true;
 
             placesService = new PlacesService();
             placeDetailsService = new PlaceDetailsService();
@@ -458,16 +458,17 @@ namespace LyftApp
                     button.Content = $"Request {GetDisplayName(selectedRideType.Value)}";
                 }
                 rideState = RideStates.RideStaging;
+                await ShowRoute(pickupLocation.Value, dropoffLocation.Value);
             }
             else if (rideState == RideStates.RideStaging)
             {
-                var selectedRideType = GetSelectedRideType();
-                if (selectedRideType.HasValue)
-                {
-                    rideRequest = await AppConstants.ShyftClient.RequestRide(pickupLocation.Value.Latitude, pickupLocation.Value.Longitude,
-                        dropoffLocation.Value.Latitude, dropoffLocation.Value.Longitude,
-                        selectedRideType.Value);
-                }
+                //var selectedRideType = GetSelectedRideType();
+                //if (selectedRideType.HasValue)
+                //{
+                //    rideRequest = await AppConstants.ShyftClient.RequestRide(pickupLocation.Value.Latitude, pickupLocation.Value.Longitude,
+                //        dropoffLocation.Value.Latitude, dropoffLocation.Value.Longitude,
+                //        selectedRideType.Value);
+                //}
             }
         }
 
@@ -545,6 +546,21 @@ namespace LyftApp
                 }
             }
             return string.Empty;
+        }
+
+        private async Task ShowRoute(BasicGeoposition start, BasicGeoposition end)
+        {
+            map.Routes.Clear();
+            MapRouteFinderResult routeResult = await MapRouteFinder.GetDrivingRouteAsync(new Geopoint(start),
+                new Geopoint(end),
+                MapRouteOptimization.TimeWithTraffic);
+
+            if (routeResult.Status == MapRouteFinderStatus.Success)
+            {
+                MapRouteView viewOfRoute = new MapRouteView(routeResult.Route);
+                map.Routes.Add(viewOfRoute);
+                await map.TrySetViewBoundsAsync(routeResult.Route.BoundingBox, new Thickness(25), MapAnimationKind.Bow);
+            }
         }
     }
 }
