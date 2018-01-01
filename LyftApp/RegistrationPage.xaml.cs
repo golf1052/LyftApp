@@ -36,24 +36,32 @@ namespace LyftApp
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
-            string refreshToken = (string)localSettings.Values["refresh_token"];
-            if (string.IsNullOrEmpty(refreshToken))
+            if (AppConstants.ShyftClient.GetType() == typeof(ShyftSandboxClient))
             {
-                webView.Visibility = Visibility.Visible;
-                List<ShyftConstants.AuthScopes> scopes = new List<ShyftConstants.AuthScopes>()
-                {
-                    ShyftConstants.AuthScopes.Offline,
-                    ShyftConstants.AuthScopes.Profile,
-                    ShyftConstants.AuthScopes.Public,
-                    ShyftConstants.AuthScopes.RidesRead,
-                    ShyftConstants.AuthScopes.RidesRequest
-                };
-                webView.Navigate(new Uri(AppConstants.ShyftClient.GetAuthUrl(scopes)));
+                await AppConstants.ShyftClient.Auth(scopes: null);
+                Frame.Navigate(typeof(MainPage));
             }
             else
             {
-                await AppConstants.ShyftClient.AuthWithRefreshToken(refreshToken);
-                Frame.Navigate(typeof(MainPage));
+                string refreshToken = (string)localSettings.Values["refresh_token"];
+                if (string.IsNullOrEmpty(refreshToken))
+                {
+                    webView.Visibility = Visibility.Visible;
+                    List<ShyftConstants.AuthScopes> scopes = new List<ShyftConstants.AuthScopes>()
+                    {
+                        ShyftConstants.AuthScopes.Offline,
+                        ShyftConstants.AuthScopes.Profile,
+                        ShyftConstants.AuthScopes.Public,
+                        ShyftConstants.AuthScopes.RidesRead,
+                        ShyftConstants.AuthScopes.RidesRequest
+                    };
+                    webView.Navigate(new Uri(AppConstants.ShyftClient.GetAuthUrl(scopes)));
+                }
+                else
+                {
+                    await AppConstants.ShyftClient.AuthWithRefreshToken(refreshToken);
+                    Frame.Navigate(typeof(MainPage));
+                }
             }
         }
 

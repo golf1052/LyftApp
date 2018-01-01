@@ -10,11 +10,34 @@
 
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Custom:MapControl x:Name="map" CenterChanged="map_CenterChanged"/>
-        <Grid Grid.Row="1">
+        <Border x:Name="rideStatusBackground" Visibility="Collapsed">
+            <Grid Margin="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="rideStatusTextBlock" Text="Pending" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="15" Margin="0,4"/>
+                <TextBlock x:Name="rideEtaTextBlock" Text="NEVER" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,4"/>
+                <Grid x:Name="vehicleInfoGrid" Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Rectangle x:Name="ampColorRectangle" Width="16" Fill="CornflowerBlue"/>
+                    <Image x:Name="vehicleImage" Width="64" Height="64" Grid.Column="1"/>
+                    <TextBlock x:Name="vehicleInfoTextBlock" Text="Testing" TextAlignment="Center" Grid.Column="2" VerticalAlignment="Center" />
+                </Grid>
+            </Grid>
+        </Border>
+        <Custom:MapControl x:Name="map" CenterChanged="map_CenterChanged" Grid.Row="1"/>
+        <Grid x:Name="setupGrid" Grid.Row="2">
             <StackPanel>
                 <ComboBox x:Name="rideTypeComboBox" HorizontalAlignment="Stretch" SelectionChanged="rideTypeComboBox_SelectionChanged">
                 </ComboBox>
@@ -24,7 +47,34 @@
                 <AutoSuggestBox x:Name="dropoffSearchBox" QueryIcon="Find" IsEnabled="False" Visibility="Collapsed"/>
                 <AutoSuggestBox x:Name="searchBox" VerticalAlignment="Stretch" QueryIcon="Find" TextChanged="searchBox_TextChanged" SuggestionChosen="searchBox_SuggestionChosen" QuerySubmitted="searchBox_QuerySubmitted"/>
                 <Button x:Name="button" Content="Set pickup" HorizontalAlignment="Stretch" Click="button_Click"/>
+                <Button x:Name="advanceButton" Content="Advance Ride State" HorizontalAlignment="Stretch" Click="advanceButton_Click" Visibility="Collapsed" />
             </StackPanel>
+        </Grid>
+        <Grid x:Name="ratingGrid" Grid.Row="3" Visibility="Collapsed">
+            <StackPanel>
+                <ComboBox x:Name="ratingComboBox" SelectedIndex="0" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="5"/>
+                    <ComboBoxItem Content="4"/>
+                    <ComboBoxItem Content="3"/>
+                    <ComboBoxItem Content="2"/>
+                    <ComboBoxItem Content="1"/>
+                </ComboBox>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="tip0Button" Content="$0" HorizontalAlignment="Stretch" Click="tip0Button_Click"/>
+                    <Button x:Name="tip1Button" Content="$1" Grid.Column="1" HorizontalAlignment="Stretch" Click="tip1Button_Click"/>
+                    <Button x:Name="tip2Button" Content="$2" Grid.Column="2" HorizontalAlignment="Stretch" Click="tip2Button_Click"/>
+                    <Button x:Name="tip3Button" Content="$3" Grid.Column="3" HorizontalAlignment="Stretch" Click="tip3Button_Click"/>
+                    <Button x:Name="tip4Button" Content="$4" Grid.Column="4" HorizontalAlignment="Stretch" Click="tip4Button_Click"/>
+                </Grid>
+            </StackPanel>
+            
         </Grid>
     </Grid>
 </Page>
