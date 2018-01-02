@@ -35,7 +35,7 @@ namespace LyftApp
             this.Suspending += OnSuspending;
 
             MapService.ServiceToken = Secrets.MapToken;
-            AppConstants.ShyftClient = new ShyftSandboxClient(Secrets.LyftClientId, Secrets.LyftClientSecret);
+            AppConstants.ShyftClient = new ShyftClient(Secrets.LyftClientId, Secrets.LyftClientSecret);
             GoogleSigned.AssignAllServices(new GoogleSigned(Secrets.GoogleMapsApiKey));
         }
 

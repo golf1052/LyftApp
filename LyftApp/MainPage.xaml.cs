@@ -24,6 +24,7 @@ using Shyft;
 using Windows.UI;
 using Humanizer;
 using Windows.UI.Xaml.Media.Imaging;
+using Windows.UI.Core;
 
 // The Blank Page item template is documented at https://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -43,7 +44,6 @@ namespace LyftApp
             Complete
         }
 
-        private RideStates rideState;
         private Geolocator geolocator;
 
         private List<RideType> availableRideTypes;
@@ -74,15 +74,18 @@ namespace LyftApp
         private BasicGeoposition? dropoffLocation;
         private CostEstimate currentCostEstimate;
 
+        private LyftConstants.RideType? selectedRideType;
         private RideRequest rideRequest;
+        private string currentRideId;
         private RideDetail rideDetails;
         private MapIcon driverLocation;
+
+        private RideStates RideState { get; set; }
 
         public MainPage()
         {
             this.InitializeComponent();
 
-            rideState = RideStates.Pickup;
             availableRideTypes = new List<RideType>();
 
             geolocator = new Geolocator();
@@ -108,6 +111,8 @@ namespace LyftApp
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
+            SystemNavigationManager.GetForCurrentView().BackRequested += MainPage_BackRequested;
+            SystemNavigationManager.GetForCurrentView().AppViewBackButtonVisibility = AppViewBackButtonVisibility.Visible;
             GeolocationAccessStatus accessStatus = await Geolocator.RequestAccessAsync();
             //if (accessStatus == GeolocationAccessStatus.Unspecified)
             //{
@@ -125,23 +130,173 @@ namespace LyftApp
             userLocation.Title = "Your location";
             map.MapElements.Add(userLocation);
 
-            await SetupPin(RideStates.Pickup, position);
-
             UpdateFromMapCenterTimer();
-            await GetAvailableTypes(map.Center.Position);
-            var preferredRideType = GetPreferredType(availableRideTypes);
-            if (preferredRideType.HasValue)
+            var history = await AppConstants.ShyftClient.RetrieveRideHistory();
+            if (history.Count > 0)
             {
-                SelectPreferredType(preferredRideType.Value);
-                await DisplayDrivers(map.Center.Position, preferredRideType.Value);
-                await GetEta(map.Center.Position, preferredRideType.Value);
-                loaded = true;
+                if (history[0].Status == LyftConstants.RideStatus.Canceled ||
+                    history[0].Status == LyftConstants.RideStatus.Unknown)
+                {
+                    await SetRideState(RideStates.Pickup);
+                }
+                else
+                {
+                    if (history[0].Status == LyftConstants.RideStatus.DroppedOff)
+                    {
+                        if (history[0].Charges != null && history[0].Charges.Count > 0)
+                        {
+                            await SetRideState(RideStates.Pickup);
+                        }
+                        else
+                        {
+                            currentRideId = history[0].RideId;
+                            selectedRideType = history[0].RideType;
+                            RideState = RideStates.Ride;
+                            GoToRide();
+                        }
+                    }
+                    else
+                    {
+                        currentRideId = history[0].RideId;
+                        selectedRideType = history[0].RideType;
+                        RideState = RideStates.Ride;
+                        GoToRide();
+                    }
+                }
             }
             else
             {
-                button.IsEnabled = false;
-                button.Content = "No rides available";
+                await SetRideState(RideStates.Pickup);
             }
+            loaded = true;
+        }
+
+        private async void MainPage_BackRequested(object sender, BackRequestedEventArgs e)
+        {
+            if (RideState == RideStates.RideStaging)
+            {
+                await SetRideState(RideStates.Dropoff);
+            }
+            else if (RideState == RideStates.Dropoff)
+            {
+                await SetRideState(RideStates.Pickup);
+            }
+            e.Handled = true;
+        }
+
+        private async Task SetRideState(RideStates state)
+        {
+            if (RideState == RideStates.RideStaging && state == RideStates.Dropoff)
+            {
+                dropoffSearchBox.Visibility = Visibility.Collapsed;
+                searchBox.Visibility = Visibility.Visible;
+                costTextBlock.Visibility = Visibility.Collapsed;
+                map.Routes.Clear();
+            }
+            RideState = state;
+            if (state == RideStates.Pickup)
+            {
+                SetPickupView();
+                await SetupPin(RideStates.Pickup);
+                await GetAvailableTypes(map.Center.Position);
+                var preferredRideType = GetPreferredType(availableRideTypes);
+                if (preferredRideType.HasValue)
+                {
+                    SelectPreferredType(preferredRideType.Value);
+                    await DisplayDrivers(map.Center.Position, preferredRideType.Value);
+                    await GetEta(map.Center.Position, preferredRideType.Value);
+                }
+                else
+                {
+                    button.IsEnabled = false;
+                    button.Content = "No rides available";
+                }
+            }
+            else if (state == RideStates.Dropoff)
+            {
+                SetDropoffView();
+                pickupSearchBox.Text = searchBox.Text;
+                await SetupPin(RideStates.Dropoff);
+                pickupLocation = startLocation.Location.Position;
+                button.Content = "Set destination";
+            }
+            else if (state == RideStates.RideStaging)
+            {
+                SetRideStagingView();
+                dropoffSearchBox.Text = searchBox.Text;
+                dropoffLocation = endLocation.Location.Position;
+                selectedRideType = GetSelectedRideType();
+                if (selectedRideType.HasValue)
+                {
+                    await GetCostEstimate(pickupLocation.Value, dropoffLocation.Value, selectedRideType.Value);
+                    button.Content = $"Request {GetDisplayName(selectedRideType.Value)}";
+                    await ShowRoute(pickupLocation.Value, dropoffLocation.Value);
+                }
+            }
+            else if (state == RideStates.Ride)
+            {
+                selectedRideType = GetSelectedRideType();
+                if (selectedRideType.HasValue)
+                {
+                    await RequestRide();
+                }
+            }
+            else if (state == RideStates.Complete)
+            {
+                ratingGrid.Visibility = Visibility.Visible;
+            }
+        }
+
+        private async Task RequestRide()
+        {
+            rideRequest = await AppConstants.ShyftClient.RequestRide(pickupLocation.Value.Latitude, pickupLocation.Value.Longitude,
+                        dropoffLocation.Value.Latitude, dropoffLocation.Value.Longitude,
+                        selectedRideType.Value);
+            GoToRide();
+        }
+
+        private void GoToRide()
+        {
+            SetRideView();
+            ClearDriversList();
+            RefreshRideDetails();
+        }
+
+        private void SetPickupView()
+        {
+            rideStatusBackground.Visibility = Visibility.Collapsed;
+            rideTypeComboBox.Visibility = Visibility.Visible;
+            etaTextBlock.Visibility = Visibility.Visible;
+            costTextBlock.Visibility = Visibility.Collapsed;
+            pickupSearchBox.Visibility = Visibility.Collapsed;
+            dropoffSearchBox.Visibility = Visibility.Collapsed;
+            searchBox.Visibility = Visibility.Visible;
+            button.Visibility = Visibility.Visible;
+            ratingGrid.Visibility = Visibility.Collapsed;
+            cancelButton.Visibility = Visibility.Collapsed;
+        }
+
+        private void SetDropoffView()
+        {
+            pickupSearchBox.Visibility = Visibility.Visible;
+        }
+
+        private void SetRideStagingView()
+        {
+            dropoffSearchBox.Visibility = Visibility.Visible;
+            searchBox.Visibility = Visibility.Collapsed;
+            costTextBlock.Visibility = Visibility.Visible;
+        }
+
+        private void SetRideView()
+        {
+            rideTypeComboBox.Visibility = Visibility.Collapsed;
+            etaTextBlock.Visibility = Visibility.Collapsed;
+            costTextBlock.Visibility = Visibility.Collapsed;
+            pickupSearchBox.Visibility = Visibility.Collapsed;
+            dropoffSearchBox.Visibility = Visibility.Collapsed;
+            button.Visibility = Visibility.Collapsed;
+            //advanceButton.Visibility = Visibility.Visible;
         }
 
         private async void Geolocator_PositionChanged(Geolocator sender, PositionChangedEventArgs args)
@@ -159,8 +314,8 @@ namespace LyftApp
         {
             while (true)
             {
-                if (rideState == RideStates.Pickup ||
-                    rideState == RideStates.Dropoff)
+                if (RideState == RideStates.Pickup ||
+                    RideState == RideStates.Dropoff)
                 {
                     if (!map.Center.Position.EqualsOther(lastCenter))
                     {
@@ -315,15 +470,15 @@ namespace LyftApp
 
         private async void map_CenterChanged(MapControl sender, object args)
         {
-            if (rideState == RideStates.Pickup || rideState == RideStates.Dropoff)
+            if (RideState == RideStates.Pickup || RideState == RideStates.Dropoff)
             {
                 if (startLocation != null || endLocation != null)
                 {
-                    if (rideState == RideStates.Pickup)
+                    if (RideState == RideStates.Pickup)
                     {
                         startLocation.Location = map.Center;
                     }
-                    else if (rideState == RideStates.Dropoff)
+                    else if (RideState == RideStates.Dropoff)
                     {
                         endLocation.Location = map.Center;
                     }
@@ -422,12 +577,12 @@ namespace LyftApp
 
                     if (selectedRideType.HasValue)
                     {
-                        if (rideState == RideStates.Pickup || rideState == RideStates.Dropoff)
+                        if (RideState == RideStates.Pickup || RideState == RideStates.Dropoff)
                         {
                             await DisplayDrivers(map.Center.Position, selectedRideType.Value);
                             await GetEta(map.Center.Position, selectedRideType.Value);
                         }
-                        else if (rideState == RideStates.RideStaging)
+                        else if (RideState == RideStates.RideStaging)
                         {
                             await GetCostEstimate(pickupLocation.Value, dropoffLocation.Value, selectedRideType.Value);
                         }
@@ -438,68 +593,43 @@ namespace LyftApp
 
         private LyftConstants.RideType? GetSelectedRideType()
         {
-            string selected = (string)((ComboBoxItem)rideTypeComboBox.SelectedItem).Content;
-            foreach (var availableRideType in availableRideTypes)
+            if (loaded)
             {
-                if (selected == availableRideType.DisplayName)
+                string selected = (string)((ComboBoxItem)rideTypeComboBox.SelectedItem).Content;
+                foreach (var availableRideType in availableRideTypes)
                 {
-                    return availableRideType.Type;
+                    if (selected == availableRideType.DisplayName)
+                    {
+                        return availableRideType.Type;
+                    }
                 }
+                return null;
             }
-            return null;
+            else
+            {
+                return selectedRideType;
+            }
         }
 
         private async void button_Click(object sender, RoutedEventArgs e)
         {
-            if (rideState == RideStates.Pickup)
+            if (RideState == RideStates.Pickup)
             {
-                pickupSearchBox.Text = searchBox.Text;
-                pickupSearchBox.Visibility = Visibility.Visible;
-                await SetupPin(RideStates.Dropoff);
-                pickupLocation = startLocation.Location.Position;
-                button.Content = "Set destination";
-                rideState = RideStates.Dropoff;
+                await SetRideState(RideStates.Dropoff);
             }
-            else if (rideState == RideStates.Dropoff)
+            else if (RideState == RideStates.Dropoff)
             {
-                dropoffSearchBox.Text = searchBox.Text;
-                dropoffSearchBox.Visibility = Visibility.Visible;
-                searchBox.Visibility = Visibility.Collapsed;
-                dropoffLocation = endLocation.Location.Position;
-                var selectedRideType = GetSelectedRideType();
-                if (selectedRideType.HasValue)
-                {
-                    costTextBlock.Visibility = Visibility.Visible;
-                    await GetCostEstimate(pickupLocation.Value, dropoffLocation.Value, selectedRideType.Value);
-                    button.Content = $"Request {GetDisplayName(selectedRideType.Value)}";
-                    rideState = RideStates.RideStaging;
-                    await ShowRoute(pickupLocation.Value, dropoffLocation.Value);
-                }
+                await SetRideState(RideStates.RideStaging);
             }
-            else if (rideState == RideStates.RideStaging)
+            else if (RideState == RideStates.RideStaging)
             {
-                var selectedRideType = GetSelectedRideType();
-                if (selectedRideType.HasValue)
-                {
-                    rideRequest = await AppConstants.ShyftClient.RequestRide(pickupLocation.Value.Latitude, pickupLocation.Value.Longitude,
-                        dropoffLocation.Value.Latitude, dropoffLocation.Value.Longitude,
-                        selectedRideType.Value);
-                    rideTypeComboBox.Visibility = Visibility.Collapsed;
-                    etaTextBlock.Visibility = Visibility.Collapsed;
-                    pickupSearchBox.Visibility = Visibility.Collapsed;
-                    dropoffSearchBox.Visibility = Visibility.Collapsed;
-                    button.Visibility = Visibility.Collapsed;
-                    advanceButton.Visibility = Visibility.Visible;
-                    ClearDriversList();
-                    rideState = RideStates.Ride;
-                    RefreshRideDetails();
-                }
+                await SetRideState(RideStates.Ride);
             }
         }
 
-        private async Task SetupPin(RideStates state, Geoposition position = null)
+        private async Task SetupPin(RideStates state, Geoposition position = null, LatLng latLng = null)
         {
-            if (position == null)
+            if (position == null && latLng == null)
             {
                 position = await geolocator.GetGeopositionAsync();
             }
@@ -510,22 +640,48 @@ namespace LyftApp
                     map.MapElements.Remove(startLocation);
                 }
                 startLocation = new MapIcon();
-                startLocation.Location = position.Coordinate.Point;
+                if (latLng == null)
+                {
+                    startLocation.Location = position.Coordinate.Point;
+                }
+                else
+                {
+                    SetPinLocation(startLocation, latLng);
+                }
                 startLocation.CollisionBehaviorDesired = MapElementCollisionBehavior.RemainVisible;
                 startLocation.Title = "Pickup location";
                 map.MapElements.Add(startLocation);
             }
             else if (state == RideStates.Dropoff)
             {
-                if (endLocation != null && map.MapElements.Contains(endLocation))
-                {
-                    map.MapElements.Remove(endLocation);
-                }
+                RemoveEndLocationPin();
                 endLocation = new MapIcon();
-                endLocation.Location = position.Coordinate.Point;
+                if (latLng == null)
+                {
+                    endLocation.Location = position.Coordinate.Point;
+                }
+                else
+                {
+                    SetPinLocation(endLocation, latLng);
+                }
                 endLocation.CollisionBehaviorDesired = MapElementCollisionBehavior.RemainVisible;
                 endLocation.Title = "Dropoff location";
                 map.MapElements.Add(endLocation);
+            }
+        }
+
+        private MapIcon NewPin()
+        {
+            MapIcon pin = new MapIcon();
+            pin.CollisionBehaviorDesired = MapElementCollisionBehavior.RemainVisible;
+            return NewPin();
+        }
+
+        private void RemoveEndLocationPin()
+        {
+            if (endLocation != null && map.MapElements.Contains(endLocation))
+            {
+                map.MapElements.Remove(endLocation);
             }
         }
 
@@ -590,65 +746,94 @@ namespace LyftApp
 
         private async Task RefreshRideDetails()
         {
-            while (rideState == RideStates.Ride)
+            while (RideState == RideStates.Ride)
             {
-                if (rideRequest != null)
+                rideDetails = await AppConstants.ShyftClient.RetrieveRideDetails(currentRideId);
+                rideStatusBackground.Visibility = Visibility.Visible;
+                rideStatusTextBlock.Text = rideDetails.Status.Humanize(LetterCasing.Title);
+                if (rideDetails.Status == LyftConstants.RideStatus.Pending)
                 {
-                    rideDetails = await AppConstants.ShyftClient.RetrieveRideDetails(rideRequest.RideId);
-                    rideStatusBackground.Visibility = Visibility.Visible;
-                    rideStatusTextBlock.Text = rideDetails.Status.Humanize(LetterCasing.Title);
-                    if (rideDetails.Status == LyftConstants.RideStatus.Pending)
-                    {
-                        // Orange
-                        rideStatusBackground.Background = new SolidColorBrush(AppConstants.GetColor("#FF8C00"));
-                    }
-                    else if (rideDetails.Status == LyftConstants.RideStatus.Accepted)
-                    {
-                        // Yellow
-                        rideStatusBackground.Background = new SolidColorBrush(AppConstants.GetColor("#FFB900"));
-                        vehicleInfoGrid.Visibility = Visibility.Visible;
-                        vehicleImage.Source = new BitmapImage(new Uri(rideDetails.Vehicle.ImageUrl));
-                        vehicleInfoTextBlock.Text = $"{rideDetails.Vehicle.Year} {rideDetails.Vehicle.Color} {rideDetails.Vehicle.Make} {rideDetails.Vehicle.Model}\n" +
-                            $"{rideDetails.Vehicle.LicensePlateState} {rideDetails.Vehicle.LicensePlate}";
-                        if (!string.IsNullOrEmpty(rideDetails.BeaconColor))
-                        {
-                            ampColorRectangle.Visibility = Visibility.Visible;
-                            ampColorRectangle.Fill = new SolidColorBrush(AppConstants.GetColor(rideDetails.BeaconColor));
-                        }
-                        else
-                        {
-                            ampColorRectangle.Visibility = Visibility.Collapsed;
-                        }
-                        UpdateDriverLocation(rideDetails.Location);
-                        if (rideDetails.Origin.EtaSeconds.HasValue)
-                        {
-                            rideEtaTextBlock.Visibility = Visibility.Visible;
-                            rideEtaTextBlock.Text = $"Arrives in {TimeSpan.FromSeconds(rideDetails.Origin.EtaSeconds.Value).Humanize(2)}";
-                        }
-                    }
-                    else if (rideDetails.Status == LyftConstants.RideStatus.Arrived)
-                    {
-                        // Light Green
-                        rideStatusBackground.Background = new SolidColorBrush(AppConstants.GetColor("#00CC6A"));
-                        UpdateDriverLocation(rideDetails.Location);
-                        UpdateRideEtaInfo(rideDetails.Origin);
-                    }
-                    else if (rideDetails.Status == LyftConstants.RideStatus.PickedUp)
-                    {
-                        // Pink
-                        rideStatusBackground.Background = new SolidColorBrush(AppConstants.LyftPink);
-                        UpdateDriverLocation(rideDetails.Location);
-                        UpdateRideEtaInfo(rideDetails.Destination);
-                    }
-                    else if (rideDetails.Status == LyftConstants.RideStatus.DroppedOff)
-                    {
-                        // Blue
-                        rideStatusBackground.Background = new SolidColorBrush(AppConstants.LyftMulberry);
-                        rideState = RideStates.Complete;
-                        ratingGrid.Visibility = Visibility.Visible;
-                    }
+                    // Orange
+                    rideStatusBackground.Background = new SolidColorBrush(AppConstants.GetColor("#FF8C00"));
+                    SetCancelButtonVisibility(rideDetails);
+                }
+                else if (rideDetails.Status == LyftConstants.RideStatus.Accepted)
+                {
+                    // Yellow
+                    rideStatusBackground.Background = new SolidColorBrush(AppConstants.GetColor("#FFB900"));
+                    SetCancelButtonVisibility(rideDetails);
+                    SetVehicleInfo(rideDetails);
+                }
+                else if (rideDetails.Status == LyftConstants.RideStatus.Arrived)
+                {
+                    // Light Green
+                    rideStatusBackground.Background = new SolidColorBrush(AppConstants.GetColor("#00CC6A"));
+                    SetCancelButtonVisibility(rideDetails);
+                    SetVehicleInfo(rideDetails);
+                    UpdateDriverLocation(rideDetails.Location);
+                    UpdateRideEtaInfo(rideDetails.Origin);
+                }
+                else if (rideDetails.Status == LyftConstants.RideStatus.PickedUp)
+                {
+                    // Pink
+                    rideStatusBackground.Background = new SolidColorBrush(AppConstants.LyftPink);
+                    SetCancelButtonVisibility(rideDetails);
+                    SetVehicleInfo(rideDetails);
+                    UpdateDriverLocation(rideDetails.Location);
+                    UpdateRideEtaInfo(rideDetails.Destination);
+                }
+                else if (rideDetails.Status == LyftConstants.RideStatus.DroppedOff)
+                {
+                    // Blue
+                    rideStatusBackground.Background = new SolidColorBrush(AppConstants.LyftMulberry);
+                    await SetRideState(RideStates.Complete);
+                }
+                else if (rideDetails.Status == LyftConstants.RideStatus.Canceled)
+                {
+                    await SetupPin(RideStates.Pickup, null, rideDetails.Origin);
+                    pickupLocation = startLocation.Location.Position;
+                    await SetupPin(RideStates.Dropoff, null, rideDetails.Destination);
+                    dropoffLocation = endLocation.Location.Position;
+                    await SetRideState(RideStates.RideStaging);
                 }
                 await Task.Delay(TimeSpan.FromMilliseconds(500));
+            }
+        }
+
+        private void SetCancelButtonVisibility(RideDetail rideDetails)
+        {
+            if (rideDetails.Status != LyftConstants.RideStatus.Pending &&
+                rideDetails.CanCancel != null && rideDetails.CanCancel.Count > 0 &&
+                rideDetails.CanCancel.Contains("passenger"))
+            {
+                cancelButton.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                cancelButton.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void SetVehicleInfo(RideDetail rideDetails)
+        {
+            vehicleInfoGrid.Visibility = Visibility.Visible;
+            vehicleImage.Source = new BitmapImage(new Uri(rideDetails.Vehicle.ImageUrl));
+            vehicleInfoTextBlock.Text = $"{rideDetails.Vehicle.Year} {rideDetails.Vehicle.Color} {rideDetails.Vehicle.Make} {rideDetails.Vehicle.Model}\n" +
+                $"{rideDetails.Vehicle.LicensePlateState} {rideDetails.Vehicle.LicensePlate}";
+            if (!string.IsNullOrEmpty(rideDetails.BeaconColor))
+            {
+                ampColorRectangle.Visibility = Visibility.Visible;
+                ampColorRectangle.Fill = new SolidColorBrush(AppConstants.GetColor(rideDetails.BeaconColor));
+            }
+            else
+            {
+                ampColorRectangle.Visibility = Visibility.Collapsed;
+            }
+            UpdateDriverLocation(rideDetails.Location);
+            if (rideDetails.Origin.EtaSeconds.HasValue)
+            {
+                rideEtaTextBlock.Visibility = Visibility.Visible;
+                rideEtaTextBlock.Text = $"Arrives in {TimeSpan.FromSeconds(rideDetails.Origin.EtaSeconds.Value).Humanize(2)}";
             }
         }
 
@@ -704,7 +889,7 @@ namespace LyftApp
                 {
                     rideStatus = LyftConstants.RideStatus.Pending;
                 }
-                await AppConstants.ShyftClient.ChangeRideStatus(rideDetails.RideId, rideStatus);
+                //await AppConstants.ShyftClient.ChangeRideStatus(currentRideId, rideStatus);
             }
         }
 
@@ -749,6 +934,20 @@ namespace LyftApp
         private async Task CompleteRide(int rating, int tipAmount)
         {
             await AppConstants.ShyftClient.RateRide(rideDetails.RideId, rating, tipAmount, "USD");
+            await SetRideState(RideStates.Pickup);
+        }
+
+        private async void cancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await AppConstants.ShyftClient.CancelRide(currentRideId);
+            }
+            catch (LyftException<CancellationCostError> ex)
+            {
+                // should show cancellation fee
+                await AppConstants.ShyftClient.CancelRide(currentRideId, ex.Error.Token);
+            }
         }
     }
 }

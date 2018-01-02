@@ -10,7 +10,7 @@ namespace LyftApp
 {
     public static class AppConstants
     {
-        public static ShyftSandboxClient ShyftClient;
+        public static ShyftClient ShyftClient;
 
         public static Color LyftOffWhite { get { return GetColor("#F3F3F5"); } }
         public static Color LyftCharcoal { get { return GetColor("#333347"); } }

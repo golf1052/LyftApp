@@ -38,8 +38,8 @@ namespace LyftApp
         {
             if (AppConstants.ShyftClient.GetType() == typeof(ShyftSandboxClient))
             {
-                await AppConstants.ShyftClient.Auth(scopes: null);
-                Frame.Navigate(typeof(MainPage));
+                //await AppConstants.ShyftClient.Auth(scopes: null);
+                //Frame.Navigate(typeof(MainPage));
             }
             else
             {

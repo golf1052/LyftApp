@@ -23,14 +23,14 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <TextBlock x:Name="rideStatusTextBlock" Text="Pending" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="15" Margin="0,4"/>
-                <TextBlock x:Name="rideEtaTextBlock" Text="NEVER" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,4"/>
-                <Grid x:Name="vehicleInfoGrid" Grid.Row="2">
+                <TextBlock x:Name="rideEtaTextBlock" Text="NEVER" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,4" Visibility="Collapsed"/>
+                <Grid x:Name="vehicleInfoGrid" Grid.Row="2" Visibility="Collapsed">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Rectangle x:Name="ampColorRectangle" Width="16" Fill="CornflowerBlue"/>
+                    <Rectangle x:Name="ampColorRectangle" Width="16" Fill="CornflowerBlue" Visibility="Collapsed"/>
                     <Image x:Name="vehicleImage" Width="64" Height="64" Grid.Column="1"/>
                     <TextBlock x:Name="vehicleInfoTextBlock" Text="Testing" TextAlignment="Center" Grid.Column="2" VerticalAlignment="Center" />
                 </Grid>
@@ -47,6 +47,7 @@
                 <AutoSuggestBox x:Name="dropoffSearchBox" QueryIcon="Find" IsEnabled="False" Visibility="Collapsed"/>
                 <AutoSuggestBox x:Name="searchBox" VerticalAlignment="Stretch" QueryIcon="Find" TextChanged="searchBox_TextChanged" SuggestionChosen="searchBox_SuggestionChosen" QuerySubmitted="searchBox_QuerySubmitted"/>
                 <Button x:Name="button" Content="Set pickup" HorizontalAlignment="Stretch" Click="button_Click"/>
+                <Button x:Name="cancelButton" HorizontalAlignment="Stretch" Content="Cancel" Click="cancelButton_Click" />
                 <Button x:Name="advanceButton" Content="Advance Ride State" HorizontalAlignment="Stretch" Click="advanceButton_Click" Visibility="Collapsed" />
             </StackPanel>
         </Grid>
