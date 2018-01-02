@@ -47,7 +47,7 @@
                 <AutoSuggestBox x:Name="dropoffSearchBox" QueryIcon="Find" IsEnabled="False" Visibility="Collapsed"/>
                 <AutoSuggestBox x:Name="searchBox" VerticalAlignment="Stretch" QueryIcon="Find" TextChanged="searchBox_TextChanged" SuggestionChosen="searchBox_SuggestionChosen" QuerySubmitted="searchBox_QuerySubmitted"/>
                 <Button x:Name="button" Content="Set pickup" HorizontalAlignment="Stretch" Click="button_Click"/>
-                <Button x:Name="cancelButton" HorizontalAlignment="Stretch" Content="Cancel" Click="cancelButton_Click" />
+                <Button x:Name="cancelButton" HorizontalAlignment="Stretch" Content="Cancel" Click="cancelButton_Click" Visibility="Collapsed" />
                 <Button x:Name="advanceButton" Content="Advance Ride State" HorizontalAlignment="Stretch" Click="advanceButton_Click" Visibility="Collapsed" />
             </StackPanel>
         </Grid>
